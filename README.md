@@ -1,47 +1,52 @@
-# Streamlit k diagnostics
+# Streamlit x_min / x_max / k diagnostics
 
-Application Streamlit dediee au choix des bornes et du parametre k par indicateur.
+Application Streamlit dediee au calibrage de la formule de score y(x) avec:
+
+- un choix d indicateur,
+- des bornes x_min / x_max,
+- un parametre de courbure k > 0.
 
 ## Fonctionnalites
 
-- Selection d un indicateur iXXX dans une liste.
-- Visualisation des 4 graphes de diagnostic:
-  - histogramme brut + bornes candidates,
-  - CDF brute,
-  - comparaison des courbes de scoring selon k,
-  - score d equilibre pour chaque k.
-- Affichage detaille:
-  - top k pour l indicateur,
-  - table des bornes candidates,
-  - distribution du score avec k recommande,
-  - tableau global exportable en CSV.
+- Selection d un indicateur iXXX depuis valeur_externe.csv.
+- Visualisations d aide a la decision:
+  - histogramme avec bornes candidates,
+  - boxplot,
+  - CDF,
+  - courbes y(x) pour plusieurs valeurs de k,
+  - diagnostic de k (equilibre, moyenne, dispersion, extremes),
+  - distribution des scores calcules.
+- Controle interactif de:
+  - la direction (croissant ou decroissant),
+  - x_min / x_max,
+  - k applique.
+- Exports CSV:
+  - resume global par indicateur,
+  - donnees avec scores calcules.
 
 ## Donnees attendues
 
-Par defaut l app lit:
+Par defaut, l app lit le fichier local:
 
-- `../valeur_externe.csv`
-- `../streamlit_diag/source/Parametres_indicateurs.csv`
+- `valeur_externe.csv`
 
-Vous pouvez modifier ces chemins dans la barre laterale.
+Le chemin est modifiable dans la barre laterale.
 
 ## Lancement
 
 ```bash
-cd streamlit_k
+cd /home/hadrien/Documents/projet_code/streamlit_k_repo
 python -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
 streamlit run app.py
 ```
 
-## Bornes manuelles (optionnel)
+## Formule utilisee
 
-Dans la barre laterale, champ "Bornes manuelles", format:
-
-```text
-i005: 5, 85
-i071: 0, 120
-```
-
-Une ligne par indicateur. Ces bornes remplacent le choix automatique pour les indicateurs renseignes.
+- Normalisation croissante:
+  - u(x) = clip((x - x_min) / (x_max - x_min), 0, 1)
+- Normalisation decroissante:
+  - u(x) = clip((x_max - x) / (x_max - x_min), 0, 1)
+- Score:
+  - y(x) = 100 * (exp(k * u(x)) - 1) / (exp(k) - 1), avec k > 0
