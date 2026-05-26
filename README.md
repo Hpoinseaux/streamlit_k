@@ -44,8 +44,14 @@ streamlit run app.py
 
 ## Deploiement Streamlit Cloud
 
-- Le fichier `runtime.txt` force Python 3.12 pour eviter des differences de runtime.
+- Le fichier `.python-version` fixe Python 3.12 cote repo (outils bases sur uv/pyenv).
+- Le fichier `runtime.txt` est garde pour compatibilite descendante.
 - Le fichier `.streamlit/config.toml` desactive `gatherUsageStats` afin de limiter les appels telemetry tiers (Segment/Heap).
+
+Important:
+
+- Sur Streamlit Community Cloud, la version Python active se choisit dans `Advanced settings` de l app (champ `Python version`).
+- Si une app existante reste sur une ancienne version, ouvrir `Manage app` -> `Settings` -> `Python version`, choisir 3.12, sauvegarder, puis `Reboot app`.
 
 Notes:
 
