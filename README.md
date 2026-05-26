@@ -42,6 +42,16 @@ pip install -r requirements.txt
 streamlit run app.py
 ```
 
+## Deploiement Streamlit Cloud
+
+- Le fichier `runtime.txt` force Python 3.12 pour eviter des differences de runtime.
+- Le fichier `.streamlit/config.toml` desactive `gatherUsageStats` afin de limiter les appels telemetry tiers (Segment/Heap).
+
+Notes:
+
+- Les erreurs console navigateur sur `segment.io` ou `heapanalytics.com` sont en general non bloquantes pour l application.
+- En cas de probleme, verifier les logs serveur Streamlit (traceback Python) plutot que les warnings JS telemetry.
+
 ## Formule utilisee
 
 - Normalisation croissante:
