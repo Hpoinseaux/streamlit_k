@@ -1,23 +1,16 @@
 from __future__ import annotations
 
+import csv
 import re
 import unicodedata
-from pathlib import Path
+from io import StringIO
 
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import streamlit as st
 
-INDICATOR_PATTERN = re.compile(r"^i\d+$", flags=re.IGNORECASE)
-
-PROJECT_ROOT = Path(__file__).resolve().parent
-DEFAULT_VALUES_CANDIDATES = [
-    PROJECT_ROOT / "valeur_externe.csv",
-    PROJECT_ROOT / "valeurs_externes.csv",
-    PROJECT_ROOT.parent / "valeur_externe.csv",
-    PROJECT_ROOT.parent / "valeurs_externes.csv",
-]
+INDICATOR_PATTERN = re.compile(r"i\d+", flags=re.IGNORECASE)
 
 BOUND_METHODS = ["data", "p01_p99", "p05_p95", "iqr_clip"]
 BOUND_LABELS = {
@@ -29,13 +22,6 @@ BOUND_LABELS = {
 
 DIRECTION_ASC = "Croissant (plus grand = meilleur)"
 DIRECTION_DESC = "Decroissant (plus petit = meilleur)"
-
-
-def first_existing(paths: list[Path]) -> Path:
-    for path in paths:
-        if path.exists():
-            return path
-    return paths[0]
 
 
 def normalize_col_name(name: str) -> str:
@@ -58,38 +44,50 @@ def parse_k_grid(raw_text: str) -> tuple[list[float], list[str]]:
     return sorted(set(values)), bad_tokens
 
 
-@st.cache_data(show_spinner=False)
-def load_values_dataset(values_path: str) -> tuple[pd.DataFrame, list[str]]:
-    path = Path(values_path)
-    if not path.exists():
-        raise FileNotFoundError(f"Fichier introuvable: {path}")
+@st.cache_data(show_spinner=False, max_entries=8)
+def load_values_dataset(csv_bytes: bytes) -> tuple[pd.DataFrame, list[str]]:
+    try:
+        csv_text = csv_bytes.decode("utf-8-sig")
+    except UnicodeDecodeError:
+        csv_text = csv_bytes.decode("cp1252")
 
-    df = pd.read_csv(path, low_memory=False)
+    source = StringIO(csv_text)
+    header = next((line for line in source if line.strip()), "")
+    if not header:
+        raise ValueError("Le CSV est vide.")
+
+    separator = max(
+        (";", ","),
+        key=lambda sep: len(next(csv.reader([header], delimiter=sep))),
+    )
+    source.seek(0)
+    df = pd.read_csv(source, sep=separator, low_memory=False)
+    if df.empty:
+        raise ValueError("Le CSV ne contient aucune ligne de données.")
+    if not isinstance(df.index, pd.RangeIndex):
+        raise ValueError("Le nombre de champs dépasse le nombre de colonnes de l’en-tête.")
+
     df.columns = [str(col).strip() for col in df.columns]
+    if not df.columns.is_unique:
+        raise ValueError("Les noms de colonnes doivent être uniques.")
 
-    indicator_cols = [
-        col
-        for col in df.columns
-        if INDICATOR_PATTERN.match(str(col).strip())
-    ]
+    coded_indicators = [col for col in df.columns if INDICATOR_PATTERN.fullmatch(col)]
+    indicator_cols = []
+    for col in coded_indicators or df.columns:
+        values = df[col]
+        if pd.api.types.is_bool_dtype(values):
+            continue
+        if not pd.api.types.is_numeric_dtype(values):
+            values = values.astype(str).str.replace(",", ".", regex=False)
+        numeric = pd.to_numeric(values, errors="coerce").replace([np.inf, -np.inf], np.nan)
+        if numeric.notna().any():
+            df[col] = numeric
+            indicator_cols.append(col)
 
     if not indicator_cols:
-        numeric_cols = []
-        for col in df.columns:
-            parsed = pd.to_numeric(df[col], errors="coerce")
-            if parsed.notna().sum() > 0:
-                numeric_cols.append(col)
-        indicator_cols = numeric_cols
+        raise ValueError("Aucun indicateur ne contient de valeurs numériques exploitables.")
 
-    if not indicator_cols:
-        raise ValueError(
-            "Aucune colonne exploitable trouvee. Verifiez le fichier valeur_externe.csv"
-        )
-
-    for col in indicator_cols:
-        df[col] = pd.to_numeric(df[col], errors="coerce")
-
-    return df, sorted(indicator_cols, key=lambda x: str(x).lower())
+    return df, sorted(indicator_cols, key=str.lower)
 
 
 def compute_candidate_bounds(raw_series: pd.Series) -> dict | None:
@@ -533,8 +531,24 @@ def compute_global_summary(df_values: pd.DataFrame, indicator_cols: list[str]) -
 
 st.set_page_config(page_title="Diagnostic x_min / x_max / k", layout="wide")
 st.title("Diagnostic interactif x_min, x_max et k")
+
+with st.sidebar:
+    st.header("1) Données")
+    uploaded_file = st.file_uploader("Déposer un fichier CSV", type=["csv"])
+
+if uploaded_file is None:
+    st.info("Déposez un fichier CSV dans la barre latérale pour commencer.")
+    st.stop()
+
+try:
+    with st.spinner("Chargement des données…"):
+        df_values, indicator_cols = load_values_dataset(uploaded_file.getvalue())
+except (ValueError, csv.Error) as exc:
+    st.error(f"Impossible de charger le fichier « {uploaded_file.name} ». {exc}")
+    st.stop()
+
 st.caption(
-    "Choisissez un indicateur dans valeur_externe.csv puis ajustez les bornes et la courbure k pour calibrer y(x)."
+    "Choisissez un indicateur du fichier actif, puis ajustez les bornes et la courbure k pour calibrer y(x)."
 )
 
 st.markdown("Formule utilisee (k > 0):")
@@ -543,12 +557,6 @@ st.latex(r"u_{dec}(x)=\mathrm{clip}\left(\frac{x_{\max}-x}{x_{\max}-x_{\min}},0,
 st.latex(r"y(x)=100\times\frac{e^{k\,u(x)}-1}{e^k-1}")
 
 with st.sidebar:
-    st.header("1) Donnees")
-    values_path = st.text_input(
-        "Chemin valeur_externe.csv",
-        value=str(first_existing(DEFAULT_VALUES_CANDIDATES)),
-    )
-
     st.header("2) Reglages globaux")
     direction = st.selectbox(
         "Sens de la performance",
@@ -606,33 +614,22 @@ if not k_grid:
     st.error("La grille de k est vide. Ajoutez au moins une valeur strictement positive.")
     st.stop()
 
-try:
-    with st.spinner("Chargement des donnees..."):
-        df_values, indicator_cols = load_values_dataset(values_path)
-except Exception as exc:
-    st.error(f"Erreur de chargement: {exc}")
-    st.stop()
-
-if not indicator_cols:
-    st.error("Aucun indicateur disponible.")
-    st.stop()
-
-default_index = 0
-if "i005" in indicator_cols:
-    default_index = indicator_cols.index("i005")
+default_indicator = "i005" if "i005" in indicator_cols else indicator_cols[0]
+if df_values[default_indicator].nunique() < 2:
+    default_indicator = next(
+        (col for col in indicator_cols if df_values[col].nunique() > 1),
+        default_indicator,
+    )
 
 with st.sidebar:
     st.header("3) Choix indicateur")
     selected_indicator = st.selectbox(
         "Indicateur",
         options=indicator_cols,
-        index=default_index,
+        index=indicator_cols.index(default_indicator),
     )
 
-raw_series = pd.to_numeric(df_values[selected_indicator], errors="coerce").dropna()
-if raw_series.empty:
-    st.error("L indicateur choisi ne contient pas de valeurs numeriques exploitables.")
-    st.stop()
+raw_series = df_values[selected_indicator].dropna()
 
 candidates = compute_candidate_bounds(raw_series)
 if candidates is None:

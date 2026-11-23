@@ -8,7 +8,7 @@ Application Streamlit dediee au calibrage de la formule de score y(x) avec:
 
 ## Fonctionnalites
 
-- Selection d un indicateur iXXX depuis valeur_externe.csv.
+- Sélection d’un indicateur dans le CSV déposé.
 - Visualisations d aide a la decision:
   - histogramme avec bornes candidates,
   - boxplot,
@@ -26,11 +26,9 @@ Application Streamlit dediee au calibrage de la formule de score y(x) avec:
 
 ## Donnees attendues
 
-Par defaut, l app lit le fichier local:
+Dans la barre latérale, utilisez **Déposer un fichier CSV**, puis choisissez une colonne dans **Indicateur**. Le dépôt d’un CSV est requis pour afficher les diagnostics et les exports.
 
-- `valeur_externe.csv`
-
-Le chemin est modifiable dans la barre laterale.
+Le CSV doit avoir une ligne d’en-tête. Les colonnes de type `i012` ou `i165` sont détectées automatiquement. En l’absence de ces codes, l’application propose les colonnes numériques. Les séparateurs virgule et point-virgule sont acceptés, ainsi que les virgules décimales des exports Excel.
 
 ## Lancement
 
